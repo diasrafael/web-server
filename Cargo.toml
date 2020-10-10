@@ -1,5 +1,5 @@
 [package]
-name = "webServer"
+name = "web_server"
 version = "0.1.0"
 authors = ["rafaeldias <rafael.dias@bemobi.com.br>"]
 edition = "2018"
