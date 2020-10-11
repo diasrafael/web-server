@@ -4,31 +4,39 @@ use rand::prelude::*;
 
 struct Worker {
     id: usize,
-    thread: thread::JoinHandle<()>
+    thread: Option<thread::JoinHandle<()>>
     
 }
 
 impl Worker {
-    fn new(receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+    fn new(receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
 
         let id = random();
         let thread = thread::spawn(move || loop {
             println!("Worker {} waiting...", id);
             //let mutex_guard = receiver.lock().unwrap(); // would make server serial
-            let job = receiver.lock().unwrap().recv().expect("Got an error! no more messages can ever be received on this channel");
+            let message = receiver.lock().unwrap().recv().expect("Got an error! no more messages can ever be received on this channel");
             println!("Worker {} got a job; executing.", id);
-            job();
+            match message {
+                Message::NewJob(job) => job(),
+                Message::Terminate => break,
+            }
         });
-        Worker{id, thread}
+        Worker{id, thread: Some(thread)}
     }
 }
 
-pub struct ThreadPool {
-    workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>
+enum Message {
+    NewJob(Job),
+    Terminate,
 }
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
+
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Message>
+}
 
 impl ThreadPool {
     /// Create a new TheadPool
@@ -55,6 +63,30 @@ impl ThreadPool {
     where F: FnOnce() + Send + 'static
     {
         println!("Thread pool sending job to workers...");
-        self.sender.send(Box::new(f)).unwrap();
+        self.sender.send(Message::NewJob(Box::new(f))).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+
+        for _ in &mut self.workers {
+            self.sender.send(Message::Terminate).unwrap();
+        }
+
+        /*
+        If we tried to send a message and join immediately 
+        in the same loop, we couldn’t guarantee that the worker 
+        in the current iteration would be the one to get 
+        the message from the channel.
+        */
+
+        for worker in &mut self.workers {    
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(t) = worker.thread.take() {
+                t.join().unwrap();
+            }
+        }
     }
 }

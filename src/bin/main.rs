@@ -14,6 +14,7 @@ fn main() {
     println!("Creating thread pool with {} workers...", thread_pool_size);
     let mut pool = ThreadPool::new(thread_pool_size);
 
+    //for stream in listener.incoming().take(2) {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         pool.execute(|| {
